@@ -22,6 +22,7 @@
 #include "http_stream.h"
 #include "i2s_stream.h"
 #include "aac_decoder.h"
+#include "mp3_decoder.h"
 #include "periph_touch.h" // dodany
 #include "periph_adc_button.h"
 #include "periph_button.h"
@@ -39,7 +40,17 @@
 
 static const char *TAG = "HTTP_LIVINGSTREAM_EXAMPLE";
 
-#define AAC_STREAM_URI "http://open.ls.qingting.fm/live/274/64k.m3u8?format=aac"
+//obsluga zmiany stacji
+
+char* radio_list[] = {"http://81.136.155.183:8000/45Radio32k", "http://stream3.polskieradio.pl:8950/","http://panel.nadaje.com:9160/radiokrakow.aac",
+ "http://stream2.bbnradio.org:8000/chinese.aac", "http://waw01-03.ic.smcdn.pl:8000/2070-1.aac", "http://s0.radiohost.pl:7096/stream2"};
+
+// 45radio32k, polskieradio (tak sobie), radiokrakow, jakies z przykladu chinskie,  eska, artradio bogatynia
+
+int current_radio_index = 0;
+int radios_num = (int) sizeof(radio_list)/sizeof(radio_list[0]);
+
+
 
 int _http_stream_event_handle(http_stream_event_msg_t *msg)
 {
@@ -83,6 +94,7 @@ void app_main(void)
     int player_volume = 10;
     audio_hal_get_volume(board_handle->audio_hal, &player_volume);
 
+
     ESP_LOGI(TAG, "[2.0] Create audio pipeline for playback");
     audio_pipeline_cfg_t pipeline_cfg = DEFAULT_AUDIO_PIPELINE_CONFIG();
     pipeline = audio_pipeline_init(&pipeline_cfg);
@@ -105,7 +117,7 @@ void app_main(void)
 
     ESP_LOGI(TAG, "[2.4] Register all elements to audio pipeline");
     audio_pipeline_register(pipeline, http_stream_reader, "http");
-    audio_pipeline_register(pipeline, aac_decoder,        "aac");
+    audio_pipeline_register(pipeline, aac_decoder ,        "aac");
     audio_pipeline_register(pipeline, i2s_stream_writer,  "i2s");
 
     ESP_LOGI(TAG, "[2.5] Link it together http_stream-->aac_decoder-->i2s_stream-->[codec_chip]");
@@ -113,7 +125,7 @@ void app_main(void)
     audio_pipeline_link(pipeline, &link_tag[0], 3);
 
     ESP_LOGI(TAG, "[2.6] Set up  uri (http as http_stream, aac as aac decoder, and default output is i2s)");
-    audio_element_set_uri(http_stream_reader, AAC_STREAM_URI);
+    audio_element_set_uri(http_stream_reader, radio_list[0]);
 
     ESP_LOGI(TAG, "[ 3 ] Start and wait for Wi-Fi network");
     esp_periph_config_t periph_cfg = DEFAULT_ESP_PERIPH_SET_CONFIG();
@@ -148,6 +160,7 @@ void app_main(void)
     ESP_LOGI(TAG, "[ 5 ] Start audio_pipeline");
     audio_pipeline_run(pipeline);
 
+
     while (1) {
         audio_event_iface_msg_t msg;
         esp_err_t ret = audio_event_iface_listen(evt, &msg, portMAX_DELAY);
@@ -161,6 +174,7 @@ void app_main(void)
             && msg.cmd == AEL_MSG_CMD_REPORT_MUSIC_INFO) {
             audio_element_info_t music_info = {0};
             audio_element_getinfo(aac_decoder, &music_info);
+
 
             ESP_LOGI(TAG, "[ * ] Receive music info from aac decoder, sample_rates=%d, bits=%d, ch=%d",
                      music_info.sample_rates, music_info.bits, music_info.channels);
@@ -197,7 +211,7 @@ void app_main(void)
                 }
                 audio_hal_set_volume(board_handle->audio_hal, player_volume);
                 ESP_LOGI(TAG, "[ * ] Volume set to %d %%", player_volume);
-            } 
+            }
             else if ((int) msg.data == get_input_voldown_id()) {
                 ESP_LOGI(TAG, "[ * ] [Vol-] touch tap event");
                 player_volume -= 10;
@@ -207,6 +221,17 @@ void app_main(void)
                 audio_hal_set_volume(board_handle->audio_hal, player_volume);
                 ESP_LOGI(TAG, "[ * ] Volume set to %d %%", player_volume);
             }
+                 else if ((int) msg.data == get_input_set_id()) {
+                ESP_LOGI(TAG, "[ * ] [Set] touch tap event");
+                current_radio_index = (current_radio_index+1) % radios_num;
+                ESP_LOGI(TAG, "[ * ] station's URI: %s", radio_list[current_radio_index]);
+                audio_pipeline_stop(pipeline);
+                audio_pipeline_wait_for_stop(pipeline);
+                audio_pipeline_reset_ringbuffer(pipeline);
+                audio_pipeline_reset_items_state(pipeline);
+                audio_element_set_uri(http_stream_reader, radio_list[current_radio_index]);
+                audio_pipeline_run(pipeline);
+             }
             else if((int) msg.data == get_input_mode_id()){
                 break;
             }
@@ -222,6 +247,7 @@ void app_main(void)
     audio_pipeline_unregister(pipeline, http_stream_reader);
     audio_pipeline_unregister(pipeline, i2s_stream_writer);
     audio_pipeline_unregister(pipeline, aac_decoder);
+    // audio_pipeline_unregister(pipeline, mp3_decoder);
 
     /* Terminate the pipeline before removing the listener */
     audio_pipeline_remove_listener(pipeline);
