@@ -4,6 +4,7 @@
     "idf.flashType": "UART",
     "files.associations": {
         "adafruit_ssd1306.h": "c",
-        "adafruit_gfx.h": "c"
+        "adafruit_gfx.h": "c",
+        "font8x8_basic.h": "c"
     }
 }

@@ -3,10 +3,9 @@
 cmake_minimum_required(VERSION 3.5)
 
 
-set(EXTRA_COMPONENT_DIRS ../components/Adafruit_GFX)
-set(EXTRA_COMPONENT_DIRS ../components/Adafruit_SSD1306)
-
 set(EXTRA_COMPONENT_DIRS ../components/ssd1306)
+set(EXTRA_COMPONENT_DIRS ../components/ssd1336)
+
 
 
 include($ENV{ADF_PATH}/CMakeLists.txt)

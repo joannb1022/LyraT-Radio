@@ -1,12 +1,3 @@
-/* Play M3U HTTP Living stream
-
-   This example code is in the Public Domain (or CC0 licensed, at your option.)
-
-   Unless required by applicable law or agreed to in writing, this
-   software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-   CONDITIONS OF ANY KIND, either express or implied.
-*/
-
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -30,14 +21,11 @@
 #include "periph_wifi.h"
 #include "board.h"
 
-#include <Arduino.h>
-#include <Adafruit_SSD1306.h>
-#include "Adafruit_GFX.h"
-
+#include <stdio.h>
+#include <stdlib.h>
 
 #include "ssd1306.h"
 #include "font8x8_basic.h"
-
 
 #include "audio_idf_version.h"
 
@@ -49,17 +37,15 @@
 
 static const char *TAG = "HTTP_LIVINGSTREAM_EXAMPLE";
 
-//obsluga zmiany stacji
+// //obsluga zmiany stacji
 
-char* radio_list[] = {"http://81.136.155.183:8000/45Radio32k", "http://stream3.polskieradio.pl:8950/","http://panel.nadaje.com:9160/radiokrakow.aac",
- "http://stream2.bbnradio.org:8000/chinese.aac", "http://waw01-03.ic.smcdn.pl:8000/2070-1.aac", "http://s0.radiohost.pl:7096/stream2"};
+char* radio_list[] = {"http://81.136.155.183:8000/45Radio32k", "http://waw01-03.ic.smcdn.pl:8000/4070-1.aac" ,"http://stream3.polskieradio.pl:8950/","http://panel.nadaje.com:9160/radiokrakow.aac", "http://s0.radiohost.pl:7096/stream2"};
 
-// 45radio32k, polskieradio (tak sobie), radiokrakow, jakies z przykladu chinskie,  eska, artradio bogatynia
+
+char* radio_names_list[] = {"45 Radio 32k", "Radio Plus" ,"Polskie Radio", "Radio Krakow", "Art Radio"};
 
 int current_radio_index = 0;
 int radios_num = (int) sizeof(radio_list)/sizeof(radio_list[0]);
-
-
 
 int _http_stream_event_handle(http_stream_event_msg_t *msg)
 {
@@ -76,36 +62,47 @@ int _http_stream_event_handle(http_stream_event_msg_t *msg)
     return ESP_OK;
 }
 
-#define SCREEN_WIDTH 128 // OLED width,  in pixels
-#define SCREEN_HEIGHT 64 // OLED height, in pixels
 
-// create an OLED display object connected to I2C
-Adafruit_SSD1306 oled(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
-void setup() {
-  Serial.begin(115200);
-  Serial.write("write this");
+#define tag "SSD1306"
 
-  Wire.begin(18,23);
 
-  // initialize OLED display with I2C address 0x3C
-  if (!oled.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
-    Serial.println(F("failed to start SSD1306 OLED"));
-    while (1);
-  }
+void app_main(void){
 
-  delay(2000);         // wait two seconds for initializing
-  oled.clearDisplay(); // clear display
 
-  oled.setTextSize(1);         // set text size
-  oled.setTextColor(WHITE);    // set text color
-  oled.setCursor(0, 10);       // set position to display
-  oled.println("hej "); // set text
-  oled.display();              // display on OLED
-}
+    // // config I2C and SSD1306
 
-void loop(void)
-{
+    SSD1306_t dev;
+        int center, top, bottom;
+        char lineChar[20];
+
+    ESP_LOGI(tag, "INTERFACE is i2c");
+    ESP_LOGI(tag, "CONFIG_SDA_GPIO=%d",CONFIG_SDA_GPIO);
+    ESP_LOGI(tag, "CONFIG_SCL_GPIO=%d",CONFIG_SCL_GPIO);
+    ESP_LOGI(tag, "CONFIG_RESET_GPIO=%d",CONFIG_RESET_GPIO);
+    i2c_master_init(&dev, CONFIG_SDA_GPIO, CONFIG_SCL_GPIO, CONFIG_RESET_GPIO);
+
+    #if CONFIG_FLIP
+        dev._flip = true;
+        ESP_LOGW(tag, "Flip upside down");
+    #endif
+
+    ESP_LOGI(tag, "Panel is 128x64");
+    ssd1306_init(&dev, 128, 64);
+
+
+    top = 2;
+	center = 3;
+	bottom = 8;
+
+    ssd1306_clear_screen(&dev, false);
+	ssd1306_contrast(&dev, 0xff);
+	ssd1306_display_text(&dev, center, "Welcome!", 10, false);
+	ssd1306_hardware_scroll(&dev, SCROLL_RIGHT);
+	vTaskDelay(5000 / portTICK_PERIOD_MS);;
+	ssd1306_hardware_scroll(&dev, SCROLL_STOP);
+
+
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES) {
         ESP_ERROR_CHECK(nvs_flash_erase());
@@ -128,7 +125,7 @@ void loop(void)
     audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_DECODE, AUDIO_HAL_CTRL_START);
 
     // zeby moc zmieniac glosnosc
-    int player_volume = 10;
+    int player_volume = 50;
     audio_hal_get_volume(board_handle->audio_hal, &player_volume);
 
 
@@ -196,6 +193,9 @@ void loop(void)
 
     ESP_LOGI(TAG, "[ 5 ] Start audio_pipeline");
     audio_pipeline_run(pipeline);
+        
+    ssd1306_clear_screen(&dev, false);
+    ssd1306_display_text(&dev, center, radio_names_list[current_radio_index], strlen( radio_names_list[current_radio_index]), false);
 
 
     while (1) {
@@ -246,6 +246,13 @@ void loop(void)
                 if (player_volume > 100) {
                     player_volume = 100;
                 }
+                
+                char vol_info[20];
+                sprintf(vol_info, "Volume Up: %d", player_volume);;
+                ssd1306_display_text(&dev, 0, vol_info, 20, false);
+                vTaskDelay(1000 / portTICK_PERIOD_MS);;
+	            ssd1306_clear_line(&dev, 0, false);
+        
                 audio_hal_set_volume(board_handle->audio_hal, player_volume);
                 ESP_LOGI(TAG, "[ * ] Volume set to %d %%", player_volume);
             }
@@ -255,12 +262,23 @@ void loop(void)
                 if (player_volume < 0) {
                     player_volume = 0;
                 }
+                
+                char vol_info[20];
+                sprintf(vol_info, "Volume Down: %d", player_volume);
+                ssd1306_display_text(&dev, 0, vol_info, 20, false);
+                vTaskDelay(1000 / portTICK_PERIOD_MS);;
+	            ssd1306_clear_line(&dev, 0, false);
                 audio_hal_set_volume(board_handle->audio_hal, player_volume);
+
                 ESP_LOGI(TAG, "[ * ] Volume set to %d %%", player_volume);
             }
                  else if ((int) msg.data == get_input_set_id()) {
                 ESP_LOGI(TAG, "[ * ] [Set] touch tap event");
                 current_radio_index = (current_radio_index+1) % radios_num;
+                
+                ssd1306_clear_screen(&dev, false);
+                ssd1306_display_text(&dev, center, radio_names_list[current_radio_index], strlen(radio_names_list[current_radio_index]), false);
+
                 ESP_LOGI(TAG, "[ * ] station's URI: %s", radio_list[current_radio_index]);
                 audio_pipeline_stop(pipeline);
                 audio_pipeline_wait_for_stop(pipeline);
@@ -302,4 +320,6 @@ void loop(void)
     audio_element_deinit(i2s_stream_writer);
     audio_element_deinit(aac_decoder);
     esp_periph_set_destroy(set);
+
+
 }
