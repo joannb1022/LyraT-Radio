@@ -14,7 +14,7 @@
 #include "i2s_stream.h"
 #include "aac_decoder.h"
 #include "mp3_decoder.h"
-#include "periph_touch.h" // dodany
+#include "periph_touch.h"
 #include "periph_adc_button.h"
 #include "periph_button.h"
 #include "esp_peripherals.h"
@@ -36,12 +36,13 @@
 #endif
 
 static const char *TAG = "HTTP_LIVINGSTREAM_EXAMPLE";
+static const char *tag "SSD1306"
+
+
 
 // //obsluga zmiany stacji
 
 char* radio_list[] = {"http://81.136.155.183:8000/45Radio32k", "http://waw01-03.ic.smcdn.pl:8000/4070-1.aac" ,"http://stream3.polskieradio.pl:8950/","http://panel.nadaje.com:9160/radiokrakow.aac", "http://s0.radiohost.pl:7096/stream2"};
-
-
 char* radio_names_list[] = {"45 Radio 32k", "Radio Plus" ,"Polskie Radio", "Radio Krakow", "Art Radio"};
 
 int current_radio_index = 0;
@@ -64,43 +65,7 @@ int _http_stream_event_handle(http_stream_event_msg_t *msg)
 
 
 
-#define tag "SSD1306"
-
-
 void app_main(void){
-
-
-    // // config I2C and SSD1306
-
-    SSD1306_t dev;
-        int center, top, bottom;
-        char lineChar[20];
-
-    ESP_LOGI(tag, "INTERFACE is i2c");
-    ESP_LOGI(tag, "CONFIG_SDA_GPIO=%d",CONFIG_SDA_GPIO);
-    ESP_LOGI(tag, "CONFIG_SCL_GPIO=%d",CONFIG_SCL_GPIO);
-    ESP_LOGI(tag, "CONFIG_RESET_GPIO=%d",CONFIG_RESET_GPIO);
-    i2c_master_init(&dev, CONFIG_SDA_GPIO, CONFIG_SCL_GPIO, CONFIG_RESET_GPIO);
-
-    #if CONFIG_FLIP
-        dev._flip = true;
-        ESP_LOGW(tag, "Flip upside down");
-    #endif
-
-    ESP_LOGI(tag, "Panel is 128x64");
-    ssd1306_init(&dev, 128, 64);
-
-
-    top = 2;
-	center = 3;
-	bottom = 8;
-
-    ssd1306_clear_screen(&dev, false);
-	ssd1306_contrast(&dev, 0xff);
-	ssd1306_display_text(&dev, center, "Welcome!", 10, false);
-	ssd1306_hardware_scroll(&dev, SCROLL_RIGHT);
-	vTaskDelay(5000 / portTICK_PERIOD_MS);;
-	ssd1306_hardware_scroll(&dev, SCROLL_STOP);
 
 
     esp_err_t err = nvs_flash_init();
@@ -124,9 +89,47 @@ void app_main(void){
     audio_board_handle_t board_handle = audio_board_init();
     audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_DECODE, AUDIO_HAL_CTRL_START);
 
-    // zeby moc zmieniac glosnosc
-    int player_volume = 50;
+    // ja nie wiem, czy ta 10 jest tu potrzebna, bo na poczatku i tak ma inna wartosc
+    int player_volume = 10;
     audio_hal_get_volume(board_handle->audio_hal, &player_volume);
+
+    
+    //initialize SSD1306 display
+
+    SSD1306_t dev;
+    ESP_LOGI(tag, "INTERFACE is i2c");
+    ESP_LOGI(tag, "CONFIG_SDA_GPIO=%d",CONFIG_SDA_GPIO);
+    ESP_LOGI(tag, "CONFIG_SCL_GPIO=%d",CONFIG_SCL_GPIO);
+    ESP_LOGI(tag, "CONFIG_RESET_GPIO=%d",CONFIG_RESET_GPIO);
+    i2c_master_init(&dev, CONFIG_SDA_GPIO, CONFIG_SCL_GPIO, CONFIG_RESET_GPIO);
+    
+    //czy zamiast tego wyzej (i2c_master_init) nie wystarcza te dwie linijki
+    //#define I2CAddress 0x3C a taki jest ten adres,, on jest w bibliotece zdefinoiowany powinine dzialac
+    //ale jak nie to taki jest
+
+    dev->_address = I2CAddress;
+	dev->_flip = false;
+
+    #if CONFIG_FLIP
+        dev._flip = true;
+        ESP_LOGW(tag, "Flip upside down");
+    #endif
+
+
+    ESP_LOGI(tag, "Panel is 128x64");
+    ssd1306_init(&dev, 128, 64);
+
+    int center, top, bottom;
+    top = 2;
+	center = 3;
+	bottom = 8;
+
+    ssd1306_clear_screen(&dev, false);
+	ssd1306_contrast(&dev, 0xff);
+	ssd1306_display_text(&dev, center, "Welcome!", 10, false);
+	ssd1306_hardware_scroll(&dev, SCROLL_RIGHT);
+	vTaskDelay(5000 / portTICK_PERIOD_MS);;
+	ssd1306_hardware_scroll(&dev, SCROLL_STOP);
 
 
     ESP_LOGI(TAG, "[2.0] Create audio pipeline for playback");
@@ -171,6 +174,9 @@ void app_main(void){
     esp_periph_handle_t wifi_handle = periph_wifi_init(&wifi_cfg);
     esp_periph_start(set, wifi_handle);
     periph_wifi_wait_for_connected(wifi_handle, portMAX_DELAY);
+
+
+    
     ESP_LOGI(TAG, "[3.1] Initialize keys on board"); //dodane
     audio_board_key_init(set);
 
@@ -187,12 +193,15 @@ void app_main(void){
     audio_event_iface_set_listener(esp_periph_set_get_event_iface(set), evt);
 
     ESP_LOGW(TAG, "[ 5 ] Tap touch buttons to control music player:");
-    ESP_LOGW(TAG, "      [Play] to start, pause and resume, [Set] to stop.");
+    ESP_LOGW(TAG, "      [Set] to change station.");
+    ESP_LOGW(TAG, "      [Play] to start or stop the music.");
     ESP_LOGW(TAG, "      [Vol-] or [Vol+] to adjust volume.");
 
+    ESP_LOGW(TAG, "[ 5.1 ] Use button [Mode] to stop the radio:");
 
-    ESP_LOGI(TAG, "[ 5 ] Start audio_pipeline");
+    ESP_LOGI(TAG, "[ 6 ] Start audio_pipeline");
     audio_pipeline_run(pipeline);
+    int playing = 1;
         
     ssd1306_clear_screen(&dev, false);
     ssd1306_display_text(&dev, center, radio_names_list[current_radio_index], strlen( radio_names_list[current_radio_index]), false);
@@ -236,9 +245,8 @@ void app_main(void){
         }
 
 
-        /* z przykladu mp3 player */
-           if ((msg.source_type == PERIPH_ID_TOUCH || msg.source_type == PERIPH_ID_BUTTON || msg.source_type == PERIPH_ID_ADC_BTN)
-            && (msg.cmd == PERIPH_TOUCH_TAP || msg.cmd == PERIPH_BUTTON_PRESSED || msg.cmd == PERIPH_ADC_BUTTON_PRESSED)) {
+        if ((msg.source_type == PERIPH_ID_TOUCH || msg.source_type == PERIPH_ID_BUTTON || msg.source_type == PERIPH_ID_ADC_BTN)
+        && (msg.cmd == PERIPH_TOUCH_TAP || msg.cmd == PERIPH_BUTTON_PRESSED || msg.cmd == PERIPH_ADC_BUTTON_PRESSED)) {
 
             if ((int) msg.data == get_input_volup_id()) {
                 ESP_LOGI(TAG, "[ * ] [Vol+] touch tap event");
@@ -265,28 +273,42 @@ void app_main(void){
                 
                 char vol_info[20];
                 sprintf(vol_info, "Volume Down: %d", player_volume);
-                ssd1306_display_text(&dev, 0, vol_info, 20, false);
+                ssd1306_display_text(&dev, 0, vol_info, 19, false);
                 vTaskDelay(1000 / portTICK_PERIOD_MS);;
 	            ssd1306_clear_line(&dev, 0, false);
                 audio_hal_set_volume(board_handle->audio_hal, player_volume);
 
                 ESP_LOGI(TAG, "[ * ] Volume set to %d %%", player_volume);
             }
-                 else if ((int) msg.data == get_input_set_id()) {
-                ESP_LOGI(TAG, "[ * ] [Set] touch tap event");
-                current_radio_index = (current_radio_index+1) % radios_num;
+            else if ((int) msg.data == get_input_set_id()) {
+            ESP_LOGI(TAG, "[ * ] [Set] touch tap event");
+            current_radio_index = (current_radio_index+1) % radios_num;
                 
-                ssd1306_clear_screen(&dev, false);
-                ssd1306_display_text(&dev, center, radio_names_list[current_radio_index], strlen(radio_names_list[current_radio_index]), false);
+            ssd1306_clear_screen(&dev, false);
+            ssd1306_display_text(&dev, center, radio_names_list[current_radio_index], strlen(radio_names_list[current_radio_index]), false);
 
-                ESP_LOGI(TAG, "[ * ] station's URI: %s", radio_list[current_radio_index]);
-                audio_pipeline_stop(pipeline);
-                audio_pipeline_wait_for_stop(pipeline);
-                audio_pipeline_reset_ringbuffer(pipeline);
-                audio_pipeline_reset_items_state(pipeline);
-                audio_element_set_uri(http_stream_reader, radio_list[current_radio_index]);
-                audio_pipeline_run(pipeline);
-             }
+            ESP_LOGI(TAG, "[ * ] station's URI: %s", radio_list[current_radio_index]);
+            audio_pipeline_stop(pipeline);
+            audio_pipeline_wait_for_stop(pipeline);
+            audio_pipeline_reset_ringbuffer(pipeline);
+            audio_pipeline_reset_items_state(pipeline);
+            audio_element_set_uri(http_stream_reader, radio_list[current_radio_index]);
+            audio_pipeline_run(pipeline);
+            }
+            else if ((int) msg.data == get_input_play_id){
+                ESP_LOGI(TAG, "[ * ] [Play] touch tap event");
+                ESP_LOGI(TAG, "[ * ] [Play] touch tap event");
+                if (playing == 0){
+                    playing = 1;
+                    ESP_LOGI(TAG, "[ * ] Starting audio pipeline");
+                    audio_pipeline_pause(pipeline);
+                }
+                else {
+                    playing = 0;
+                    ESP_LOGI(TAG, "[ * ] Pausing audio pipeline");
+                    audio_pipeline_run(pipeline);
+                }
+            }
             else if((int) msg.data == get_input_mode_id()){
                 break;
             }
